@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 #include "libpois0n.h"
 
 void print_progress(double progress, void* data) {

@@ -213,7 +213,9 @@ void irecv_exit() {
 }
 
 #ifdef __APPLE__
-	void dummy_callback() { }
+	void dummy_callback(struct libusb_transfer *transfer) {
+		(void)transfer;
+	}
 #endif
 
 int irecv_control_transfer( irecv_client_t client,
@@ -230,21 +232,33 @@ int irecv_control_transfer( irecv_client_t client,
 #else
 	if (timeout <= 10) {
 		// pod2g: dirty hack for limera1n support.
-		IOReturn kresult;
-		IOUSBDevRequest req;
-		bzero(&req, sizeof(req));
-		//struct darwin_device_handle_priv *priv = (struct darwin_device_handle_priv *)client->handle->os_priv;
-		struct darwin_device_priv *dpriv = (struct darwin_device_priv *)client->handle->dev->os_priv;
-		req.bmRequestType     = bmRequestType;
-		req.bRequest          = bRequest;
-		req.wValue            = OSSwapLittleToHostInt16 (wValue);
-		req.wIndex            = OSSwapLittleToHostInt16 (wIndex);
-		req.wLength           = OSSwapLittleToHostInt16 (wLength);
-		req.pData             = data + LIBUSB_CONTROL_SETUP_SIZE;
-		kresult = (*(dpriv->device))->DeviceRequestAsync(dpriv->device, &req, (IOAsyncCallback1) dummy_callback, NULL);
-		usleep(5 * 1000);
-		kresult = (*(dpriv->device))->USBDeviceAbortPipeZero (dpriv->device);
-		return kresult == KERN_SUCCESS ? 0 : -1;
+		// Revised for compatibility with modern libusb versions on macOS.
+		struct libusb_transfer* transfer = libusb_alloc_transfer(0);
+		if (transfer != NULL) {
+			unsigned char* buffer = (unsigned char*) malloc(LIBUSB_CONTROL_SETUP_SIZE + wLength);
+			if (buffer) {
+				libusb_fill_control_setup(buffer, bmRequestType, bRequest, wValue, wIndex, wLength);
+				if (wLength > 0 && data != NULL) {
+					memcpy(buffer + LIBUSB_CONTROL_SETUP_SIZE, data, wLength);
+				}
+
+				libusb_fill_control_transfer(transfer, client->handle, buffer, (libusb_transfer_cb_fn) dummy_callback, NULL, timeout);
+				transfer->flags = LIBUSB_TRANSFER_FREE_BUFFER | LIBUSB_TRANSFER_FREE_TRANSFER;
+
+				if (libusb_submit_transfer(transfer) < 0) {
+					// if submission fails, we need to free manually because callback won't run
+					libusb_free_transfer(transfer);
+				} else {
+					usleep(5000);
+					libusb_cancel_transfer(transfer);
+
+					// Pump event loop to process cancellation
+					struct timeval tv = { 0, 1000 };
+					libusb_handle_events_timeout(NULL, &tv);
+				}
+			}
+		}
+		return 0;
 	} else {
 		return libusb_control_transfer(client->handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout);
 	}

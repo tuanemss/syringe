@@ -1,5 +1,5 @@
 XXD = xxd
-CROSS = arm-elf-
+CROSS = arm-none-eabi-
 ARMCC = $(CROSS)gcc
 ARMAS = $(CROSS)as
 ARMOBJCOPY = $(CROSS)objcopy

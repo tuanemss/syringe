@@ -77,6 +77,7 @@ int main(int argc, char* argv[])
 	irecv_error_t error;
 	unsigned int cpid;
 	int can_ra1n = 0;
+	char* exploit_name = "";
 
 	printf("Loadibec " LOADIBEC_VERSION COMMIT_STRING ".\n");
 
@@ -92,7 +93,7 @@ int main(int argc, char* argv[])
 
 	printf("Connecting to iDevice...\n");
 
-	error = irecv_open_attempts(&client, 10);
+	error = irecv_open_attempts(&client, 5);
 	if(error != IRECV_E_SUCCESS)
 	{
 		fprintf(stderr, "Failed to connect to iBoot, error %d.\n", error);
@@ -102,13 +103,22 @@ int main(int argc, char* argv[])
 	if(irecv_get_cpid(client, &cpid) == IRECV_E_SUCCESS)
 	{
 		if(cpid > 8900)
+		{
 			can_ra1n = 1;
+			exploit_name = "limera1n";
+		}
+		else if(cpid == 8720)
+		{
+			can_ra1n = 1;
+			exploit_name = "steaks4uce";
+		}
 	}
 
 	if(client->mode == kDfuMode && can_ra1n)
 	{
 		int ret;
-		printf("linera1n compatible device detected, injecting limera1n.\n");
+		printf("%s compatible device detected, injecting %s.\n", exploit_name, exploit_name);
+
 		irecv_close(client);
 		irecv_exit();
 
@@ -125,9 +135,9 @@ int main(int argc, char* argv[])
 
 		pois0n_injectonly();
 
-		printf("limera1ned, reconnecting...\n");
+		printf("%s injected, reconnecting...\n", exploit_name);
 
-		client = irecv_reconnect(client, 10);
+		client = irecv_reconnect(client, 5);
 		if(!client)
 		{
 			fprintf(stderr, "Failed to reconnect.\n");
@@ -137,13 +147,13 @@ int main(int argc, char* argv[])
 		printf("uploading ibss...\n");
 		if(upload_ibss() >= 0)
 		{
-			client = irecv_reconnect(client, 10);
+			client = irecv_reconnect(client, 5);
 			if(upload_ibss_payload() >= 0)
 			{
 				irecv_send_command(client, "go");
 				printf("iBSS loaded...\n");
 
-				client = irecv_reconnect(client, 10);
+				client = irecv_reconnect(client, 5);
 			}
 		}
 	}
@@ -162,7 +172,12 @@ int main(int argc, char* argv[])
 	}
 
 	if(can_ra1n)
-		error = irecv_send_command(client, "go jump 0x41000000");
+	{
+		if(cpid == 8720)
+			error = irecv_send_command(client, "go jump 0x09000000");
+		else
+			error = irecv_send_command(client, "go jump 0x41000000");
+	}
 	else
 		error = irecv_send_command(client, "go");
 	if(error != IRECV_E_SUCCESS)
